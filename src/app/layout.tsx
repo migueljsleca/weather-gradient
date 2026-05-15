@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Location",
-  description: "A minimal location-aware web app.",
+  title: "weather and gradients",
+  description: "a visual exploration",
 };
 
 export default function RootLayout({
