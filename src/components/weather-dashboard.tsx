@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 type LocationState =
   | { status: "idle" | "locating" | "loading"; place?: PlaceData }
@@ -37,11 +37,11 @@ type SkyTheme = {
 };
 
 const defaultPlace: PlaceData = {
-  name: "Tokyo",
-  country: "Japan",
-  latitude: 35.6895,
-  longitude: 139.6917,
-  timezone: "Asia/Tokyo",
+  name: "Funchal",
+  country: "Portugal",
+  latitude: 32.6669,
+  longitude: -16.9241,
+  timezone: "Atlantic/Madeira",
   weather: {
     time: "2026-05-13T23:00",
     isDay: false,
@@ -54,7 +54,7 @@ const defaultPlace: PlaceData = {
     windGusts: 16,
     windDirection: 80,
   },
-  hourly: [],
+  hourly: buildFallbackHourlyForecast("2026-05-13T23:00"),
 };
 
 export function WeatherDashboard() {
@@ -74,6 +74,8 @@ export function WeatherDashboard() {
   const [timelineDragging, setTimelineDragging] = useState(false);
   const [touchTooltipVisible, setTouchTooltipVisible] = useState(false);
   const [touchTooltipFading, setTouchTooltipFading] = useState(false);
+  const [hasEntered, setHasEntered] = useState(false);
+  const [defaultPlaceLoaded, setDefaultPlaceLoaded] = useState(false);
   const compactSearchMeasureRef = useRef<HTMLSpanElement | null>(null);
   const searchRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -172,17 +174,37 @@ export function WeatherDashboard() {
     setQuery("");
   }
 
-  useEffect(() => {
+  function handleLocationAllow() {
+    setHasEntered(true);
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          loadPlaceByCoordinates(
+            position.coords.latitude,
+            position.coords.longitude,
+          ).catch(() => undefined);
+        },
+        () => undefined,
+        { enableHighAccuracy: true, maximumAge: 10 * 60 * 1000, timeout: 10_000 },
+      );
+    }
+  }
+
+  function handleLocationDeny() {
+    setHasEntered(true);
+  }
+
+  useLayoutEffect(() => {
     function measureCompactSearch() {
       if (compactSearchMeasureRef.current) {
-        setCompactSearchWidth(Math.ceil(compactSearchMeasureRef.current.getBoundingClientRect().width));
+        setCompactSearchWidth(Math.ceil(compactSearchMeasureRef.current.scrollWidth));
       }
     }
 
     measureCompactSearch();
     requestAnimationFrame(measureCompactSearch);
     document.fonts?.ready.then(measureCompactSearch).catch(() => undefined);
-  }, [placeLabel]);
+  }, [defaultPlaceLoaded, hasEntered, placeLabel]);
 
   useEffect(() => {
     if (!searchOpen) return;
@@ -248,22 +270,6 @@ export function WeatherDashboard() {
   }, [contentMotionKey]);
 
   useEffect(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          loadPlaceByCoordinates(
-            position.coords.latitude,
-            position.coords.longitude,
-          ).catch(() => undefined);
-        },
-        () => undefined,
-        { enableHighAccuracy: true, maximumAge: 10 * 60 * 1000, timeout: 10_000 },
-      );
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
     const handleMouseUp = () => setTimelineDragging(false);
     window.addEventListener("mouseup", handleMouseUp);
     return () => window.removeEventListener("mouseup", handleMouseUp);
@@ -277,16 +283,25 @@ export function WeatherDashboard() {
     }
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    loadPlaceByCoordinates(defaultPlace.latitude, defaultPlace.longitude)
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          setDefaultPlaceLoaded(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const date = useMemo(
-    () =>
-      new Intl.DateTimeFormat(undefined, {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-        timeZone: activePlace.timezone,
-      }).format(new Date(activeWeather.time)),
-    [activePlace.timezone, activeWeather.time],
+    () => formatWeatherDate(activeWeather.time),
+    [activeWeather.time],
   );
 
   async function loadPlaceByQuery(value: string) {
@@ -383,11 +398,67 @@ export function WeatherDashboard() {
   }
 
   return (
-      <main className="relative flex h-dvh items-center justify-center overflow-hidden px-5 py-12 text-center">
-        <div
-          className="sky-gradient pointer-events-none absolute inset-0"
-          style={{ backgroundImage: sky.background }}
-        />
+    <>
+      {!hasEntered ? (
+        <div className="relative flex h-dvh items-center justify-center overflow-hidden">
+          <div
+            className="sky-gradient pointer-events-none absolute inset-0"
+            style={{
+              backgroundImage: "linear-gradient(180deg, #4a7ab8 0%, #6a9ad4 32%, #9ac0e8 60%, #f0b858 100%)",
+            }}
+          />
+          <div className="sky-linear-light pointer-events-none absolute inset-0" />
+          <div className="sky-linear-haze pointer-events-none absolute inset-x-[-18%] bottom-[-18%] h-[58vh]" />
+          <div className="relative z-10 flex w-full max-w-[18.5rem] flex-col items-center gap-3 px-5 text-center sm:max-w-none sm:px-0">
+            <h1 className="text-[22px] font-medium leading-[1.08] tracking-tight text-white/90 sm:text-2xl sm:leading-none">
+              <span className="block whitespace-nowrap sm:hidden">a visual exploration</span>
+              <span className="block whitespace-nowrap sm:hidden">with weather and gradients</span>
+              <span className="hidden sm:inline">a visual exploration with weather and gradients</span>
+            </h1>
+            <div className="flex flex-col items-center gap-3 text-sm sm:flex-row sm:gap-6">
+              <button
+                className="text-white/75 underline underline-offset-4 transition hover:text-white"
+                onClick={handleLocationAllow}
+                type="button"
+              >
+                allow location
+              </button>
+              <button
+                className="text-white/75 underline underline-offset-4 transition hover:text-white"
+                onClick={handleLocationDeny}
+                type="button"
+              >
+                use default
+              </button>
+            </div>
+          </div>
+          <a
+            href="https://miguel-leca.com"
+            target="_blank"
+            rel="noreferrer"
+            className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 text-sm text-white/75 transition hover:text-white/90"
+          >
+            made by <span className="underline underline-offset-2">Miguel Leça</span>
+          </a>
+        </div>
+      ) : !defaultPlaceLoaded ? (
+        <div className="relative flex h-dvh items-center justify-center overflow-hidden">
+          <div
+            className="sky-gradient pointer-events-none absolute inset-0"
+            style={{ backgroundImage: "linear-gradient(180deg, #0a0e24 0%, #141832 32%, #242852 64%, #3a3e66 100%)" }}
+          />
+          <div className="sky-linear-light pointer-events-none absolute inset-0" />
+          <div className="sky-linear-haze pointer-events-none absolute inset-x-[-18%] bottom-[-18%] h-[58vh]" />
+          <div className="relative z-10 flex flex-col items-center gap-3 text-white/85">
+            <span className="text-sm tracking-wide">Loading Funchal weather</span>
+          </div>
+        </div>
+      ) : (
+        <main className="relative flex h-dvh items-center justify-center overflow-hidden px-5 py-12 text-center">
+          <div
+            className="sky-gradient pointer-events-none absolute inset-0"
+            style={{ backgroundImage: sky.background }}
+          />
         {fadingBg && (
           <div
             className="pointer-events-none absolute inset-0 transition-opacity duration-[1400ms] ease-out"
@@ -404,21 +475,14 @@ export function WeatherDashboard() {
         <div className="sky-linear-light pointer-events-none absolute inset-0" />
         <div className="sky-linear-haze pointer-events-none absolute inset-x-[-18%] bottom-[-18%] h-[58vh]" />
 
-      <span
-        ref={compactSearchMeasureRef}
-        className="pointer-events-none fixed left-[-9999px] top-[-9999px] whitespace-nowrap text-sm text-white/90 opacity-0"
-      >
-        {placeLabel}
-      </span>
-
       <div
         ref={searchRef}
         className="fixed left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full border border-white/14 bg-white/10 backdrop-blur-xl transition-[width] duration-[400ms] ease-out sm:top-5 sm:-translate-x-1/2 sm:-translate-y-0"
-        style={{ width: searchOpen ? "min(82vw, 24rem)" : `min(calc(100vw - 2rem), ${compactSearchWidth + 32}px)` }}
+        style={{ width: searchOpen ? "min(82vw, 24rem)" : `min(calc(100vw - 2rem), ${compactSearchWidth + 40}px)` }}
       >
         {/* Compact view — shows city name */}
         <div
-            className="flex h-10 cursor-pointer items-center justify-center px-4 text-sm text-white/92 transition-all duration-300 ease-out"
+            className="flex h-10 cursor-pointer items-center justify-center px-5 text-sm text-white/92 transition-all duration-300 ease-out"
           style={{
             opacity: compactLabelVisible ? 1 : 0,
             pointerEvents: searchOpen ? "none" : "auto",
@@ -427,7 +491,7 @@ export function WeatherDashboard() {
           }}
           onClick={openSearch}
         >
-          <span className="inline-block whitespace-nowrap">{placeLabel}</span>
+          <span ref={compactSearchMeasureRef} className="inline-block whitespace-nowrap">{placeLabel}</span>
         </div>
 
         {/* Expanded view — search form */}
@@ -492,7 +556,7 @@ export function WeatherDashboard() {
       >
         <span className="text-[14px] text-white/60">{date}</span>
         <span className="font-mono text-[14px] text-white/60">
-          {formatForecastTime(activeWeather.time, activePlace.timezone)}
+          {formatForecastTime(activeWeather.time)}
         </span>
       </div>
 
@@ -540,10 +604,7 @@ export function WeatherDashboard() {
                   ref={(node) => {
                     timelineTickRefs.current[index] = node;
                   }}
-                  aria-label={`${formatForecastTime(
-                    hour.time,
-                    activePlace.timezone,
-                  )}: ${Math.round(hour.temperature)} degrees, ${getWeatherLabel(
+                  aria-label={`${formatForecastTime(hour.time)}: ${Math.round(hour.temperature)} degrees, ${getWeatherLabel(
                     hour.code,
                   )}`}
                   className="timeline-tick group relative -mx-1 flex h-20 w-[16px] items-end justify-center sm:-mx-1.5 sm:w-[20px]"
@@ -582,7 +643,7 @@ export function WeatherDashboard() {
                   />
                   {(hoveredHour !== null || timelineDragging || touchTooltipVisible || touchTooltipFading) && visualHour === index && (
                     <div className={`pointer-events-none absolute bottom-full mb-4 whitespace-nowrap rounded-full border border-white/14 bg-white/10 px-2.5 py-1 font-mono text-[11px] text-white/92 backdrop-blur-xl transition-opacity duration-200 ${touchTooltipFading ? "opacity-0" : "opacity-100"}`}>
-                      {formatForecastTime(hour.time, activePlace.timezone)}
+                      {formatForecastTime(hour.time)}
                     </div>
                   )}
                 </button>
@@ -592,6 +653,8 @@ export function WeatherDashboard() {
         </div>
       </section>
     </main>
+      )}
+    </>
   );
 }
 
@@ -612,19 +675,6 @@ function formatSpeed(value: number | undefined) {
   return typeof value === "number" && Number.isFinite(value)
     ? `${Math.round(value)} km/h`
     : "—";
-}
-
-function formatForecastTime(value: string | undefined, timezone: string) {
-  if (!value) {
-    return "—";
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: timezone,
-  }).format(new Date(value));
 }
 
 function getTimelineTickHeight(index: number, hoveredHour: number | null) {
@@ -660,8 +710,8 @@ function getTimelineTickOpacity(index: number, hoveredHour: number | null) {
 type TimeBucket = "night" | "dawn" | "morning" | "noon" | "afternoon" | "evening" | "dusk";
 type WeatherCondition = "storm" | "rain" | "fog" | "cloudy" | "clear";
 
-function getTimeBucket(hour: number, isDay: boolean): TimeBucket {
-  if (!isDay || hour >= 20 || hour < 4) return "night";
+function getTimeBucket(hour: number): TimeBucket {
+  if (hour >= 20 || hour < 4) return "night";
   if (hour >= 4 && hour < 6) return "dawn";
   if (hour >= 6 && hour < 9) return "morning";
   if (hour >= 9 && hour < 15) return "noon";
@@ -721,9 +771,9 @@ const skyGradients: Record<WeatherCondition, Record<TimeBucket, SkyTheme>> = {
     dawn: skyTheme("#5e7e9e 0%, #8ab0c8 28%, #d8c8a0 56%, #f0a880 100%", "bg-[#7e6e4e]/26"),
     morning: skyTheme("#4e8ec6 0%, #6eaad6 34%, #8ec4e6 68%, #b2d8f0 100%", "bg-[#3e6e96]/22"),
     noon: skyTheme("#3e8ec6 0%, #5eaad6 34%, #7ec4e6 68%, #a2d8f0 100%", "bg-[#2e6e96]/18"),
-    afternoon: skyTheme("#4e82b6 0%, #6e9ec6 32%, #92b8d6 60%, #d8c8a0 100%", "bg-[#3e5e7e]/24"),
+    afternoon: skyTheme("#4a7ab8 0%, #6a9ad4 32%, #9ac0e8 60%, #f0b858 100%", "bg-[#4e6e8e]/24"),
     evening: skyTheme("#3e5e8e 0%, #5e7ea8 30%, #8a9eb8 58%, #d8a880 100%", "bg-[#2e4e6e]/30"),
-    dusk: skyTheme("#1a0e2e 0%, #4a1e3e 25%, #9a3e4e 50%, #e86e3e 75%, #f8a85e 100%", "bg-[#2e1e2e]/50"),
+    dusk: skyTheme("#18152d 0%, #35264e 24%, #6f4c6a 48%, #b86f5f 74%, #d79867 100%", "bg-[#261f30]/50"),
   },
 };
 
@@ -748,8 +798,8 @@ const coldClearGradients: Record<TimeBucket, SkyTheme> = {
 };
 
 function getSkyTheme(weather: CurrentWeather): SkyTheme {
-  const hour = new Date(weather.time).getHours();
-  const timeBucket = getTimeBucket(hour, weather.isDay);
+  const hour = getLocalHour(weather.time);
+  const timeBucket = getTimeBucket(hour);
   const condition = getWeatherCondition(weather);
   const temp = weather.temperature;
 
@@ -762,6 +812,89 @@ function getSkyTheme(weather: CurrentWeather): SkyTheme {
   }
 
   return skyGradients[condition][timeBucket];
+}
+
+function buildFallbackHourlyForecast(baseTime: string): CurrentWeather[] {
+  const start = parseLocalWeatherTime(baseTime);
+  const startDate = start
+    ? new Date(Date.UTC(start.year, start.month - 1, start.day, start.hour, start.minute))
+    : new Date(`${baseTime}:00Z`);
+
+  return Array.from({ length: 24 }, (_, index) => {
+    const time = new Date(startDate.getTime() + index * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 16);
+    const hour = ((start?.hour ?? 0) + index) % 24;
+    const daytime = hour >= 6 && hour < 18;
+
+    return {
+      time,
+      isDay: daytime,
+      temperature: daytime ? 16 + Math.round(index * 0.6) : 12 + Math.round(index * 0.2),
+      code: daytime ? 1 : 45,
+      cloudCover: daytime ? 38 : 78,
+      precipitation: 0,
+      rain: 0,
+      windSpeed: 8 + (index % 5),
+      windGusts: 16 + (index % 7),
+      windDirection: 80,
+    };
+  });
+}
+
+function parseLocalWeatherTime(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+
+  if (!match) {
+    return null;
+  }
+
+  const [, year, month, day, hour, minute] = match;
+
+  return {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: Number(hour),
+    minute: Number(minute),
+  };
+}
+
+function getLocalHour(value: string) {
+  return parseLocalWeatherTime(value)?.hour ?? 12;
+}
+
+function formatWeatherDate(value: string) {
+  const parts = parseLocalWeatherTime(value);
+  const date = parts
+    ? new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute))
+    : new Date(value);
+
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+function formatForecastTime(value: string | undefined) {
+  if (!value) {
+    return "—";
+  }
+
+  const parts = parseLocalWeatherTime(value);
+  const date = parts
+    ? new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute))
+    : new Date(value);
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "UTC",
+  }).format(date);
 }
 
 function skyTheme(stops: string, panel: string): SkyTheme {

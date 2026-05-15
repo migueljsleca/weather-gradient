@@ -8,6 +8,7 @@ type NominatimAddress = {
   county?: string;
   state?: string;
   island?: string;
+  archipelago?: string;
   country?: string;
 };
 
@@ -15,6 +16,14 @@ type NominatimResponse = {
   display_name?: string;
   address?: NominatimAddress;
 };
+
+type NominatimSearchResponse = Array<{
+  lat: string;
+  lon: string;
+  name?: string;
+  display_name?: string;
+  address?: NominatimAddress;
+}>;
 
 type GeocodingResponse = {
   results?: Array<{
@@ -115,50 +124,102 @@ export async function GET(request: Request) {
 
 async function getPlaceFromQuery(query: string): Promise<Place> {
   const { searchName, qualifier } = splitLocationQuery(query);
-  const params = new URLSearchParams({
-    name: searchName,
-    count: "10",
-    language: "en",
-    format: "json",
-  });
+  for (const candidate of buildSearchCandidates(searchName, qualifier, query)) {
+    const params = new URLSearchParams({
+      name: candidate,
+      count: "10",
+      language: "en",
+      format: "json",
+    });
 
-  const response = await fetch(
-    `https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`,
-    {
-      headers: {
-        Accept: "application/json",
+    const response = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        next: {
+          revalidate: 60 * 60 * 24 * 7,
+        },
       },
-      next: {
-        revalidate: 60 * 60 * 24 * 7,
-      },
-    },
-  );
+    );
 
-  if (!response.ok) {
-    throw new Error("Location search failed.");
+    if (!response.ok) {
+      throw new Error("Location search failed.");
+    }
+
+    const data = (await response.json()) as GeocodingResponse;
+    const result = chooseGeocodingResult(data.results ?? [], qualifier);
+
+    if (result) {
+      return {
+        name: result.name,
+        country: result.country ?? result.admin1,
+        latitude: result.latitude,
+        longitude: result.longitude,
+      };
+    }
   }
 
-  const data = (await response.json()) as GeocodingResponse;
-  const result = chooseGeocodingResult(data.results ?? [], qualifier);
+  const fallback = await getPlaceFromNominatimQuery(query);
 
-  if (!result) {
-    throw new Error("I could not find that location.");
+  if (fallback) {
+    return fallback;
   }
 
-  return {
-    name: result.name,
-    country: result.country ?? result.admin1,
-    latitude: result.latitude,
-    longitude: result.longitude,
-  };
+  throw new Error("I could not find that location.");
 }
 
 function splitLocationQuery(query: string) {
   const [name, ...rest] = query.split(",");
-  const searchName = name.trim() || query.trim();
-  const qualifier = rest.join(" ").trim().toLowerCase();
+  const explicitSearchName = name.trim() || query.trim();
+  const explicitQualifier = rest.join(" ").trim();
 
-  return { searchName, qualifier };
+  if (explicitQualifier) {
+    return { searchName: explicitSearchName, qualifier: explicitQualifier };
+  }
+
+  const normalizedQuery = normalizeLocationText(query);
+  const inferredQualifier = getInferredQualifier(normalizedQuery);
+
+  if (!inferredQualifier) {
+    return { searchName: explicitSearchName, qualifier: "" };
+  }
+
+  const searchName = query
+    .replace(new RegExp(inferredQualifier.pattern, "i"), "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return { searchName: searchName || explicitSearchName, qualifier: inferredQualifier.value };
+}
+
+function buildSearchCandidates(searchName: string, qualifier: string, query: string) {
+  const candidates = new Set<string>();
+
+  const add = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed) {
+      candidates.add(trimmed);
+    }
+  };
+
+  add(query);
+  add(searchName);
+
+  if (qualifier) {
+    add(`${searchName} ${qualifier}`);
+    add(`${searchName}, ${qualifier}`);
+
+    for (const variant of buildQualifierVariants(qualifier)) {
+      add(`${searchName} ${variant}`);
+      add(`${variant} ${searchName}`);
+    }
+  }
+
+  add(normalizeLocationText(query));
+
+  return [...candidates];
 }
 
 function chooseGeocodingResult(
@@ -169,9 +230,12 @@ function chooseGeocodingResult(
     return results[0];
   }
 
+  const qualifierVariants = buildQualifierVariants(qualifier);
+
   return (
-    results.find((result) =>
-      [
+    results.find((result) => {
+      const candidate = [
+        result.name,
         result.country,
         result.admin1,
         result.admin2,
@@ -179,11 +243,93 @@ function chooseGeocodingResult(
         result.timezone,
       ]
         .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(qualifier),
-    ) ?? results[0]
+        .map((value) => normalizeLocationText(String(value)))
+        .join(" ");
+
+      return qualifierVariants.some((variant) => candidate.includes(variant));
+    })
   );
+}
+
+function getInferredQualifier(normalizedQuery: string) {
+  if (/\b(acores|azores)\b/.test(normalizedQuery)) {
+    return { pattern: "açores|acores|azores", value: "Açores" };
+  }
+
+  return null;
+}
+
+async function getPlaceFromNominatimQuery(query: string): Promise<Place | null> {
+  const params = new URLSearchParams({
+    q: query,
+    format: "jsonv2",
+    limit: "5",
+    addressdetails: "1",
+  });
+
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+    {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "weather-location-app/0.1",
+      },
+      next: {
+        revalidate: 60 * 60 * 24 * 7,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const [result] = (await response.json()) as NominatimSearchResponse;
+
+  if (!result) {
+    return null;
+  }
+
+  const address = result.address ?? {};
+
+  return {
+    name:
+      address.city ??
+      address.town ??
+      address.village ??
+      address.municipality ??
+      address.county ??
+      address.island ??
+      result.name ??
+      result.display_name ??
+      query,
+    country: address.country ?? address.archipelago,
+    latitude: Number(result.lat),
+    longitude: Number(result.lon),
+  };
+}
+
+function normalizeLocationText(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function buildQualifierVariants(qualifier: string) {
+  const base = normalizeLocationText(qualifier);
+  const variants = new Set([base]);
+
+  for (const [from, to] of [
+    ["acores", "azores"],
+    ["azores", "acores"],
+  ] as const) {
+    if (base.includes(from)) {
+      variants.add(base.replaceAll(from, to));
+    }
+  }
+
+  return [...variants];
 }
 
 async function getPlaceFromCoordinates(
@@ -281,12 +427,8 @@ async function getCurrentWeather(
 }
 
 function toHourlyForecast(weather: OpenMeteoResponse) {
-  const currentDate = new Date(weather.current.time);
-  currentDate.setMinutes(0, 0, 0);
-  const currentMs = currentDate.getTime();
-  const currentIndex = weather.hourly.time.findIndex(
-    (time) => new Date(time).getTime() >= currentMs,
-  );
+  const currentHour = `${weather.current.time.slice(0, 13)}:00`;
+  const currentIndex = weather.hourly.time.findIndex((time) => time >= currentHour);
   const startIndex = currentIndex >= 0 ? currentIndex : 0;
 
   return weather.hourly.time.slice(startIndex, startIndex + 24).map((time, index) => {
