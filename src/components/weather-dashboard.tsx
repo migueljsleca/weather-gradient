@@ -64,13 +64,11 @@ export function WeatherDashboard() {
   });
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [compactLabelVisible, setCompactLabelVisible] = useState(true);
   const [searchHasTyped, setSearchHasTyped] = useState(false);
   const [hoveredHour, setHoveredHour] = useState<number | null>(null);
   const [displayedHour, setDisplayedHour] = useState(0);
   const [fadingBg, setFadingBg] = useState<string | null>(null);
   const [fadeOut, setFadeOut] = useState(false);
-  const [contentVisible, setContentVisible] = useState(true);
   const [timelineDragging, setTimelineDragging] = useState(false);
   const [touchTooltipVisible, setTouchTooltipVisible] = useState(false);
   const [touchTooltipFading, setTouchTooltipFading] = useState(false);
@@ -82,7 +80,6 @@ export function WeatherDashboard() {
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const timelineTickRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const touchTooltipTimeoutRef = useRef<number | null>(null);
-  const compactLabelTimeoutRef = useRef<number | null>(null);
 
   const place = "place" in location ? location.place : undefined;
   const activePlace = place ?? defaultPlace;
@@ -155,15 +152,8 @@ export function WeatherDashboard() {
   };
   const placeLabel = `${activePlace.name}${activePlace.country ? `, ${activePlace.country}` : ""}`;
   const [compactSearchWidth, setCompactSearchWidth] = useState(160);
-  const contentMotionKey = `${activePlace.name}:${activePlace.country ?? ""}:${activePlace.timezone}`;
 
   function openSearch() {
-    if (compactLabelTimeoutRef.current !== null) {
-      window.clearTimeout(compactLabelTimeoutRef.current);
-      compactLabelTimeoutRef.current = null;
-    }
-
-    setCompactLabelVisible(false);
     setSearchOpen(true);
     setSearchHasTyped(false);
   }
@@ -233,23 +223,6 @@ export function WeatherDashboard() {
     }
   }, [searchOpen]);
 
-  useEffect(() => {
-    if (compactLabelTimeoutRef.current !== null) {
-      window.clearTimeout(compactLabelTimeoutRef.current);
-      compactLabelTimeoutRef.current = null;
-    }
-
-    if (searchOpen) {
-      setCompactLabelVisible(false);
-      return;
-    }
-
-    compactLabelTimeoutRef.current = window.setTimeout(() => {
-      setCompactLabelVisible(true);
-      compactLabelTimeoutRef.current = null;
-    }, 240);
-  }, [searchOpen]);
-
   const currentBgRef = useRef(sky.background);
   useEffect(() => {
     if (sky.background !== currentBgRef.current) {
@@ -261,27 +234,12 @@ export function WeatherDashboard() {
   }, [sky.background]);
 
   useEffect(() => {
-    setContentVisible(false);
-    const frame = requestAnimationFrame(() => {
-      requestAnimationFrame(() => setContentVisible(true));
-    });
-
-    return () => cancelAnimationFrame(frame);
-  }, [contentMotionKey]);
-
-  useEffect(() => {
     const handleMouseUp = () => setTimelineDragging(false);
     window.addEventListener("mouseup", handleMouseUp);
     return () => window.removeEventListener("mouseup", handleMouseUp);
   }, []);
 
   useEffect(() => () => clearTouchTooltipTimer(), []);
-
-  useEffect(() => () => {
-    if (compactLabelTimeoutRef.current !== null) {
-      window.clearTimeout(compactLabelTimeoutRef.current);
-    }
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -453,13 +411,12 @@ export function WeatherDashboard() {
           />
         {fadingBg && (
           <div
-            className="pointer-events-none absolute inset-0 transition-opacity duration-[1400ms] ease-out"
+            className="pointer-events-none absolute inset-0 blur-[2px] transition-opacity duration-[1400ms] ease-out sm:blur-[6px]"
             style={{
               backgroundImage: fadingBg,
               backgroundSize: "100% 145%",
               opacity: fadeOut ? 0 : 1,
-              filter: "blur(6px)",
-              transform: "scale(1.02)",
+              transform: "scale(1.01)",
             }}
             onTransitionEnd={() => { setFadingBg(null); setFadeOut(false); }}
           />
@@ -469,26 +426,26 @@ export function WeatherDashboard() {
 
       <div
         ref={searchRef}
-        className="fixed left-1/2 top-8 z-20 -translate-x-1/2 overflow-hidden rounded-full border border-white/14 bg-white/10 backdrop-blur-xl transition-[width] duration-[400ms] ease-out sm:top-8 sm:-translate-x-1/2"
+        className="fixed left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full border border-white/14 bg-white/10 backdrop-blur-md transition-[width] duration-[400ms] ease-out sm:top-8 sm:-translate-y-0 sm:-translate-x-1/2 sm:backdrop-blur-xl"
         style={{ width: searchOpen ? "min(82vw, 24rem)" : `min(calc(100vw - 2rem), ${compactSearchWidth + 40}px)` }}
       >
         {/* Compact view — shows city name */}
-        <div
-            className="flex h-10 cursor-pointer items-center justify-center px-5 text-sm text-white/92 transition-all duration-300 ease-out"
-          style={{
-            opacity: compactLabelVisible ? 1 : 0,
-            pointerEvents: searchOpen ? "none" : "auto",
-            transform: compactLabelVisible ? "translateY(0px)" : "translateY(4px)",
-            whiteSpace: "nowrap",
-          }}
-          onClick={openSearch}
+          <div
+            className="flex h-10 cursor-pointer items-center justify-center px-5 text-sm text-white/92 transition-[opacity,transform] duration-300 ease-out"
+            style={{
+              opacity: searchOpen ? 0 : 1,
+              pointerEvents: searchOpen ? "none" : "auto",
+              transform: searchOpen ? "translateY(4px)" : "translateY(0px)",
+              whiteSpace: "nowrap",
+            }}
+            onClick={openSearch}
         >
           <span ref={compactSearchMeasureRef} className="inline-block whitespace-nowrap">{placeLabel}</span>
         </div>
 
         {/* Expanded view — search form */}
         <form
-          className="absolute inset-0 flex items-center gap-2 px-4 transition-all duration-300 ease-out"
+          className="absolute inset-0 flex items-center gap-2 px-4 transition-[opacity,transform] duration-300 ease-out"
           style={{
             opacity: searchOpen ? 1 : 0,
             pointerEvents: searchOpen ? "auto" : "none",
@@ -529,8 +486,7 @@ export function WeatherDashboard() {
       </div>
 
       <aside
-        className="fixed right-8 top-8 z-20 flex flex-col items-end gap-3 text-white transition-all duration-300 ease-out"
-        style={{ opacity: contentVisible ? 1 : 0, transform: contentVisible ? "translateY(0px)" : "translateY(6px)" }}
+        className="fixed right-8 top-8 z-20 flex flex-col items-end gap-3 text-white"
       >
         <Stat label="Temp" value={`${Math.round(activeWeather.temperature)}°C`} />
         <Stat label="Rain" value={`${activeWeather.rain.toFixed(1)} mm`} />
@@ -543,8 +499,7 @@ export function WeatherDashboard() {
       </aside>
 
       <div
-        className="fixed left-8 top-8 z-20 flex flex-col items-start text-white transition-all duration-300 ease-out"
-        style={{ opacity: contentVisible ? 1 : 0, transform: contentVisible ? "translateY(0px)" : "translateY(6px)" }}
+        className="fixed left-8 top-8 z-20 flex flex-col items-start text-white"
       >
         <span className="text-[14px] text-white/60">{date}</span>
         <span className="font-mono text-[14px] text-white/60">
@@ -627,14 +582,14 @@ export function WeatherDashboard() {
                   type="button"
                 >
                   <span
-                    className="block w-px rounded-full bg-white transition-all duration-200"
+                    className="block w-px rounded-full bg-white transition-[height,opacity] duration-200"
                     style={{
                       height: `${tickHeight}px`,
                       opacity: tickOpacity,
                     }}
                   />
                   {(hoveredHour !== null || timelineDragging || touchTooltipVisible || touchTooltipFading) && visualHour === index && (
-                    <div className={`pointer-events-none absolute bottom-full mb-4 whitespace-nowrap rounded-full border border-white/14 bg-white/10 px-2.5 py-1 font-mono text-[11px] text-white/92 backdrop-blur-xl transition-opacity duration-200 ${touchTooltipFading ? "opacity-0" : "opacity-100"}`}>
+                    <div className={`pointer-events-none absolute bottom-full mb-4 whitespace-nowrap rounded-full border border-white/14 bg-white/10 px-2.5 py-1 font-mono text-[11px] text-white/92 backdrop-blur-md transition-opacity duration-200 sm:backdrop-blur-xl ${touchTooltipFading ? "opacity-0" : "opacity-100"}`}>
                       {formatForecastTime(hour.time)}
                     </div>
                   )}
