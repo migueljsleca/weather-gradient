@@ -469,7 +469,7 @@ export function WeatherDashboard() {
 
       <div
         ref={searchRef}
-        className="fixed left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full border border-white/14 bg-white/10 backdrop-blur-xl transition-[width] duration-[400ms] ease-out sm:top-5 sm:-translate-x-1/2 sm:-translate-y-0"
+        className="fixed left-1/2 top-8 z-20 -translate-x-1/2 overflow-hidden rounded-full border border-white/14 bg-white/10 backdrop-blur-xl transition-[width] duration-[400ms] ease-out sm:top-8 sm:-translate-x-1/2"
         style={{ width: searchOpen ? "min(82vw, 24rem)" : `min(calc(100vw - 2rem), ${compactSearchWidth + 40}px)` }}
       >
         {/* Compact view — shows city name */}
