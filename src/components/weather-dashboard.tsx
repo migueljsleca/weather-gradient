@@ -426,12 +426,12 @@ export function WeatherDashboard() {
 
       <div
         ref={searchRef}
-        className="fixed left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 transform-gpu overflow-hidden rounded-full border border-white/14 bg-white/12 transition-[width] duration-150 ease-out sm:top-8 sm:-translate-y-0 sm:-translate-x-1/2 sm:bg-white/10 sm:backdrop-blur-xl sm:duration-[400ms]"
+        className="fixed left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 transform-gpu overflow-hidden rounded-full border border-white/14 bg-white/12 sm:top-8 sm:-translate-y-0 sm:-translate-x-1/2 sm:bg-white/10 sm:backdrop-blur-xl sm:transition-[width] sm:duration-[400ms] sm:ease-out"
         style={{ width: searchOpen ? "min(82vw, 24rem)" : `min(calc(100vw - 2rem), ${compactSearchWidth + 40}px)` }}
       >
         {/* Compact view — shows city name */}
           <div
-            className="flex h-10 cursor-pointer items-center justify-center px-5 text-sm text-white/92 transition-[opacity,transform] duration-150 ease-out sm:duration-300"
+            className="flex h-10 cursor-pointer items-center justify-center px-5 text-sm text-white/92 transition-[opacity,transform] duration-100 ease-out sm:duration-300"
             style={{
               opacity: searchOpen ? 0 : 1,
               pointerEvents: searchOpen ? "none" : "auto",
@@ -445,7 +445,7 @@ export function WeatherDashboard() {
 
         {/* Expanded view — search form */}
         <form
-          className="absolute inset-0 flex items-center gap-2 px-4 transition-[opacity,transform] duration-150 ease-out sm:duration-300"
+          className="absolute inset-0 flex items-center gap-2 px-4 transition-[opacity,transform] duration-100 ease-out sm:duration-300"
           style={{
             opacity: searchOpen ? 1 : 0,
             pointerEvents: searchOpen ? "auto" : "none",
