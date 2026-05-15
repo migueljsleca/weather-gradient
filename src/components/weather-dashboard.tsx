@@ -432,14 +432,6 @@ export function WeatherDashboard() {
               </button>
             </div>
           </div>
-          <a
-            href="https://miguel-leca.com"
-            target="_blank"
-            rel="noreferrer"
-            className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 text-sm text-white/75 transition hover:text-white/90"
-          >
-            made by <span className="underline underline-offset-2">Miguel Leça</span>
-          </a>
         </div>
       ) : !defaultPlaceLoaded ? (
         <div className="relative flex h-dvh items-center justify-center overflow-hidden">
