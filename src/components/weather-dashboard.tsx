@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { NoiseTexture } from "@/components/noise-texture";
 
 type LocationState =
   | { status: "idle" | "locating" | "loading"; place?: PlaceData }
@@ -359,14 +360,17 @@ export function WeatherDashboard() {
     <>
       {!hasEntered ? (
         <div className="relative flex h-dvh items-center justify-center overflow-hidden">
-          <div
-            className="sky-gradient pointer-events-none absolute inset-0"
-            style={{
-              backgroundImage: "linear-gradient(180deg, #4a7ab8 0%, #6a9ad4 32%, #9ac0e8 60%, #f0b858 100%)",
-            }}
-          />
-          <div className="sky-linear-light pointer-events-none absolute inset-0" />
-          <div className="sky-linear-haze pointer-events-none absolute inset-x-[-18%] bottom-[-18%] h-[58vh]" />
+          <div className="pointer-events-none absolute inset-0 z-0">
+            <div
+              className="sky-gradient absolute inset-0"
+              style={{
+                backgroundImage: "linear-gradient(180deg, #4a7ab8 0%, #6a9ad4 32%, #9ac0e8 60%, #f0b858 100%)",
+              }}
+            />
+            <div className="sky-linear-light absolute inset-0" />
+            <div className="sky-linear-haze absolute inset-x-[-18%] bottom-[-18%] h-[58vh]" />
+            <NoiseTexture />
+          </div>
           <div className="relative z-10 flex w-full max-w-[18.5rem] flex-col items-center gap-3 px-5 text-center sm:max-w-none sm:px-0">
             <h1 className="text-[22px] font-medium leading-[1.08] tracking-tight text-white/90 sm:text-2xl sm:leading-none">
               <span className="block whitespace-nowrap sm:hidden">a visual exploration</span>
@@ -393,36 +397,42 @@ export function WeatherDashboard() {
         </div>
       ) : !defaultPlaceLoaded ? (
         <div className="relative flex h-dvh items-center justify-center overflow-hidden">
-          <div
-            className="sky-gradient pointer-events-none absolute inset-0"
-            style={{ backgroundImage: "linear-gradient(180deg, #0a0e24 0%, #141832 32%, #242852 64%, #3a3e66 100%)" }}
-          />
-          <div className="sky-linear-light pointer-events-none absolute inset-0" />
-          <div className="sky-linear-haze pointer-events-none absolute inset-x-[-18%] bottom-[-18%] h-[58vh]" />
+          <div className="pointer-events-none absolute inset-0 z-0">
+            <div
+              className="sky-gradient absolute inset-0"
+              style={{ backgroundImage: "linear-gradient(180deg, #0a0e24 0%, #141832 32%, #242852 64%, #3a3e66 100%)" }}
+            />
+            <div className="sky-linear-light absolute inset-0" />
+            <div className="sky-linear-haze absolute inset-x-[-18%] bottom-[-18%] h-[58vh]" />
+            <NoiseTexture />
+          </div>
           <div className="relative z-10 flex flex-col items-center gap-3 text-white/85">
             <span className="text-sm tracking-wide">Loading Funchal weather</span>
           </div>
         </div>
       ) : (
         <main className="relative flex h-dvh items-center justify-center overflow-hidden px-5 py-12 text-center">
-          <div
-            className="sky-gradient pointer-events-none absolute inset-0"
-            style={{ backgroundImage: sky.background }}
-          />
-        {fadingBg && (
-          <div
-            className="pointer-events-none absolute inset-0 blur-[2px] transition-opacity duration-[1400ms] ease-out sm:blur-[6px]"
-            style={{
-              backgroundImage: fadingBg,
-              backgroundSize: "100% 145%",
-              opacity: fadeOut ? 0 : 1,
-              transform: "scale(1.01)",
-            }}
-            onTransitionEnd={() => { setFadingBg(null); setFadeOut(false); }}
-          />
-        )}
-        <div className="sky-linear-light pointer-events-none absolute inset-0" />
-        <div className="sky-linear-haze pointer-events-none absolute inset-x-[-18%] bottom-[-18%] h-[58vh]" />
+          <div className="pointer-events-none absolute inset-0 z-0">
+            <div
+              className="sky-gradient absolute inset-0"
+              style={{ backgroundImage: sky.background }}
+            />
+            {fadingBg && (
+              <div
+                className="absolute inset-0 blur-[2px] transition-opacity duration-[1400ms] ease-out sm:blur-[6px]"
+                style={{
+                  backgroundImage: fadingBg,
+                  backgroundSize: "100% 145%",
+                  opacity: fadeOut ? 0 : 1,
+                  transform: "scale(1.01)",
+                }}
+                onTransitionEnd={() => { setFadingBg(null); setFadeOut(false); }}
+              />
+            )}
+            <div className="sky-linear-light absolute inset-0" />
+            <div className="sky-linear-haze absolute inset-x-[-18%] bottom-[-18%] h-[58vh]" />
+            <NoiseTexture />
+          </div>
 
       <div
         ref={searchRef}
