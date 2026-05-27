@@ -74,7 +74,7 @@ export function WeatherDashboard() {
   const [touchTooltipVisible, setTouchTooltipVisible] = useState(false);
   const [touchTooltipFading, setTouchTooltipFading] = useState(false);
   const [hasEntered, setHasEntered] = useState(false);
-  const [defaultPlaceLoaded, setDefaultPlaceLoaded] = useState(false);
+  const [defaultPlaceLoaded, setDefaultPlaceLoaded] = useState(true);
   const compactSearchMeasureRef = useRef<HTMLSpanElement | null>(null);
   const searchRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -157,6 +157,7 @@ export function WeatherDashboard() {
   function openSearch() {
     setSearchOpen(true);
     setSearchHasTyped(false);
+    searchInputRef.current?.focus({ preventScroll: true });
   }
 
   function closeSearch() {
@@ -167,18 +168,7 @@ export function WeatherDashboard() {
 
   function handleLocationAllow() {
     setHasEntered(true);
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          loadPlaceByCoordinates(
-            position.coords.latitude,
-            position.coords.longitude,
-          ).catch(() => undefined);
-        },
-        () => undefined,
-        { enableHighAccuracy: true, maximumAge: 10 * 60 * 1000, timeout: 10_000 },
-      );
-    }
+    requestLocation();
   }
 
   function handleLocationDeny() {
@@ -469,7 +459,6 @@ export function WeatherDashboard() {
             <input
               ref={searchInputRef}
               className="min-w-0 flex-1 bg-transparent text-white outline-none placeholder:text-white/62"
-              disabled={isBusy}
               onChange={(event) => {
                 setQuery(event.target.value);
                 setSearchHasTyped(true);
