@@ -66,12 +66,45 @@ type OpenMeteoResponse = {
   };
 };
 
+type WeatherResponse = OpenMeteoResponse;
+
+type MetNoResponse = {
+  properties?: {
+    timeseries?: MetNoTimeseriesEntry[];
+  };
+};
+
+type MetNoTimeseriesEntry = {
+  time: string;
+  data: {
+    instant: {
+      details: {
+        air_temperature?: number;
+        cloud_area_fraction?: number;
+        wind_speed?: number;
+        wind_from_direction?: number;
+      };
+    };
+    next_1_hours?: {
+      summary?: {
+        symbol_code?: string;
+      };
+      details?: {
+        precipitation_amount?: number;
+      };
+    };
+  };
+};
+
 type Place = {
   name: string;
   country?: string;
   latitude: number;
   longitude: number;
 };
+
+const APP_USER_AGENT =
+  "weather-location-app/0.1 github.com/migueljsleca/weather-gradient";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -132,7 +165,7 @@ async function getPlaceFromQuery(query: string): Promise<Place> {
       format: "json",
     });
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`,
       {
         headers: {
@@ -142,10 +175,11 @@ async function getPlaceFromQuery(query: string): Promise<Place> {
           revalidate: 60 * 60 * 24 * 7,
         },
       },
-    );
+      5_000,
+    ).catch(() => null);
 
-    if (!response.ok) {
-      throw new Error("Location search failed.");
+    if (!response?.ok) {
+      continue;
     }
 
     const data = (await response.json()) as GeocodingResponse;
@@ -267,24 +301,31 @@ async function getPlaceFromNominatimQuery(query: string): Promise<Place | null> 
     addressdetails: "1",
   });
 
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://nominatim.openstreetmap.org/search?${params.toString()}`,
     {
       headers: {
         Accept: "application/json",
-        "User-Agent": "weather-location-app/0.1",
+        "User-Agent": APP_USER_AGENT,
       },
       next: {
         revalidate: 60 * 60 * 24 * 7,
       },
     },
-  );
+    5_000,
+  ).catch(() => null);
 
-  if (!response.ok) {
+  if (!response?.ok) {
     return null;
   }
 
-  const [result] = (await response.json()) as NominatimSearchResponse;
+  const data = (await response.json()) as NominatimSearchResponse;
+
+  const result = data.find((candidate) => {
+    const latitude = Number(candidate.lat);
+    const longitude = Number(candidate.lon);
+    return Number.isFinite(latitude) && Number.isFinite(longitude);
+  });
 
   if (!result) {
     return null;
@@ -309,29 +350,6 @@ async function getPlaceFromNominatimQuery(query: string): Promise<Place | null> 
   };
 }
 
-function normalizeLocationText(value: string) {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-}
-
-function buildQualifierVariants(qualifier: string) {
-  const base = normalizeLocationText(qualifier);
-  const variants = new Set([base]);
-
-  for (const [from, to] of [
-    ["acores", "azores"],
-    ["azores", "acores"],
-  ] as const) {
-    if (base.includes(from)) {
-      variants.add(base.replaceAll(from, to));
-    }
-  }
-
-  return [...variants];
-}
-
 async function getPlaceFromCoordinates(
   latitude: number,
   longitude: number,
@@ -352,17 +370,18 @@ async function getPlaceFromCoordinates(
     addressdetails: "1",
   });
 
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://nominatim.openstreetmap.org/reverse?${params.toString()}`,
     {
       headers: {
         Accept: "application/json",
-        "User-Agent": "weather-location-app/0.1",
+        "User-Agent": APP_USER_AGENT,
       },
       next: {
         revalidate: 60 * 60 * 24,
       },
     },
+    5_000,
   );
 
   if (!response.ok) {
@@ -394,6 +413,20 @@ async function getPlaceFromCoordinates(
 async function getCurrentWeather(
   latitude: number,
   longitude: number,
+): Promise<WeatherResponse> {
+  try {
+    return await Promise.any([
+      getOpenMeteoWeather(latitude, longitude),
+      getMetNoWeather(latitude, longitude),
+    ]);
+  } catch {
+    throw new Error("Weather data is unavailable right now.");
+  }
+}
+
+async function getOpenMeteoWeather(
+  latitude: number,
+  longitude: number,
 ): Promise<OpenMeteoResponse> {
   const params = new URLSearchParams({
     latitude: latitude.toString(),
@@ -407,16 +440,15 @@ async function getCurrentWeather(
     forecast_days: "2",
   });
 
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://api.open-meteo.com/v1/forecast?${params.toString()}`,
     {
+      cache: "no-store",
       headers: {
         Accept: "application/json",
       },
-      next: {
-        revalidate: 900,
-      },
     },
+    6_000,
   );
 
   if (!response.ok) {
@@ -424,6 +456,140 @@ async function getCurrentWeather(
   }
 
   return (await response.json()) as OpenMeteoResponse;
+}
+
+async function getMetNoWeather(
+  latitude: number,
+  longitude: number,
+): Promise<WeatherResponse> {
+  const params = new URLSearchParams({
+    lat: latitude.toFixed(4),
+    lon: longitude.toFixed(4),
+  });
+
+  const response = await fetchWithTimeout(
+    `https://api.met.no/weatherapi/locationforecast/2.0/compact?${params.toString()}`,
+    {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        "User-Agent": APP_USER_AGENT,
+      },
+    },
+    6_000,
+  );
+
+  if (!response.ok) {
+    throw new Error("Backup weather lookup failed.");
+  }
+
+  const data = (await response.json()) as MetNoResponse;
+  const hourly = (data.properties?.timeseries ?? [])
+    .map(toMetNoHour)
+    .filter((hour): hour is OpenMeteoResponse["current"] => Boolean(hour))
+    .slice(0, 24);
+
+  const current = hourly[0];
+
+  if (!current) {
+    throw new Error("Backup weather data is incomplete.");
+  }
+
+  return {
+    timezone: "UTC",
+    current,
+    hourly: {
+      time: hourly.map((hour) => hour.time),
+      is_day: hourly.map((hour) => hour.is_day),
+      temperature_2m: hourly.map((hour) => hour.temperature_2m),
+      weather_code: hourly.map((hour) => hour.weather_code),
+      cloud_cover: hourly.map((hour) => hour.cloud_cover),
+      precipitation: hourly.map((hour) => hour.precipitation),
+      rain: hourly.map((hour) => hour.rain),
+      wind_speed_10m: hourly.map((hour) => hour.wind_speed_10m),
+      wind_gusts_10m: hourly.map((hour) => hour.wind_gusts_10m),
+      wind_direction_10m: hourly.map((hour) => hour.wind_direction_10m),
+    },
+  };
+}
+
+function toMetNoHour(entry: MetNoTimeseriesEntry) {
+  const details = entry.data.instant.details;
+  const temperature = details.air_temperature;
+
+  if (typeof temperature !== "number") {
+    return null;
+  }
+
+  const symbol = entry.data.next_1_hours?.summary?.symbol_code;
+  const precipitation = entry.data.next_1_hours?.details?.precipitation_amount ?? 0;
+  const windSpeed = typeof details.wind_speed === "number" ? details.wind_speed * 3.6 : 0;
+
+  return {
+    time: entry.time.replace(/:00Z$/, ""),
+    is_day: symbol?.includes("night") ? 0 : 1,
+    temperature_2m: temperature,
+    weather_code: getWmoCodeFromMetNoSymbol(symbol, precipitation),
+    cloud_cover: details.cloud_area_fraction ?? 0,
+    precipitation,
+    rain: precipitation,
+    wind_speed_10m: windSpeed,
+    wind_gusts_10m: windSpeed,
+    wind_direction_10m: details.wind_from_direction ?? 0,
+  };
+}
+
+function getWmoCodeFromMetNoSymbol(symbol: string | undefined, precipitation: number) {
+  if (!symbol) {
+    return precipitation > 0 ? 61 : 3;
+  }
+
+  if (symbol.includes("thunder")) return 95;
+  if (symbol.includes("heavyrain")) return 65;
+  if (symbol.includes("rainshowers")) return 80;
+  if (symbol.includes("rain")) return 61;
+  if (symbol.includes("sleet") || symbol.includes("snow")) return 61;
+  if (symbol.includes("fog")) return 45;
+  if (symbol.includes("cloudy")) return symbol.includes("partly") ? 2 : 3;
+  if (symbol.includes("fair")) return 1;
+  if (symbol.includes("clearsky")) return 0;
+  return precipitation > 0 ? 61 : 3;
+}
+
+function normalizeLocationText(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function buildQualifierVariants(qualifier: string) {
+  const base = normalizeLocationText(qualifier);
+  const variants = new Set([base]);
+
+  for (const [from, to] of [
+    ["acores", "azores"],
+    ["azores", "acores"],
+  ] as const) {
+    if (base.includes(from)) {
+      variants.add(base.replaceAll(from, to));
+    }
+  }
+
+  return [...variants];
+}
+
+function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => {
+    clearTimeout(timeout);
+  });
 }
 
 function toHourlyForecast(weather: OpenMeteoResponse) {
