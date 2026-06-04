@@ -101,6 +101,7 @@ type Place = {
   country?: string;
   latitude: number;
   longitude: number;
+  timezone?: string;
 };
 
 const APP_USER_AGENT =
@@ -116,7 +117,11 @@ export async function GET(request: Request) {
     const place = query
       ? await getPlaceFromQuery(query)
       : await getPlaceFromCoordinates(latitude, longitude);
-    const weather = await getCurrentWeather(place.latitude, place.longitude);
+    const weather = await getCurrentWeather(
+      place.latitude,
+      place.longitude,
+      place.timezone,
+    );
 
     return NextResponse.json(
       {
@@ -191,6 +196,7 @@ async function getPlaceFromQuery(query: string): Promise<Place> {
         country: result.country ?? result.admin1,
         latitude: result.latitude,
         longitude: result.longitude,
+        timezone: result.timezone,
       };
     }
   }
@@ -413,11 +419,12 @@ async function getPlaceFromCoordinates(
 async function getCurrentWeather(
   latitude: number,
   longitude: number,
+  timezone?: string,
 ): Promise<WeatherResponse> {
   try {
     return await Promise.any([
       getOpenMeteoWeather(latitude, longitude),
-      getMetNoWeather(latitude, longitude),
+      getMetNoWeather(latitude, longitude, timezone),
     ]);
   } catch {
     throw new Error("Weather data is unavailable right now.");
@@ -461,6 +468,7 @@ async function getOpenMeteoWeather(
 async function getMetNoWeather(
   latitude: number,
   longitude: number,
+  timezone = "UTC",
 ): Promise<WeatherResponse> {
   const params = new URLSearchParams({
     lat: latitude.toFixed(4),
@@ -485,7 +493,7 @@ async function getMetNoWeather(
 
   const data = (await response.json()) as MetNoResponse;
   const hourly = (data.properties?.timeseries ?? [])
-    .map(toMetNoHour)
+    .map((entry) => toMetNoHour(entry, timezone))
     .filter((hour): hour is OpenMeteoResponse["current"] => Boolean(hour))
     .slice(0, 24);
 
@@ -496,7 +504,7 @@ async function getMetNoWeather(
   }
 
   return {
-    timezone: "UTC",
+    timezone,
     current,
     hourly: {
       time: hourly.map((hour) => hour.time),
@@ -513,7 +521,7 @@ async function getMetNoWeather(
   };
 }
 
-function toMetNoHour(entry: MetNoTimeseriesEntry) {
+function toMetNoHour(entry: MetNoTimeseriesEntry, timezone: string) {
   const details = entry.data.instant.details;
   const temperature = details.air_temperature;
 
@@ -526,7 +534,7 @@ function toMetNoHour(entry: MetNoTimeseriesEntry) {
   const windSpeed = typeof details.wind_speed === "number" ? details.wind_speed * 3.6 : 0;
 
   return {
-    time: entry.time.replace(/:00Z$/, ""),
+    time: formatInTimeZone(entry.time, timezone),
     is_day: symbol?.includes("night") ? 0 : 1,
     temperature_2m: temperature,
     weather_code: getWmoCodeFromMetNoSymbol(symbol, precipitation),
@@ -554,6 +562,42 @@ function getWmoCodeFromMetNoSymbol(symbol: string | undefined, precipitation: nu
   if (symbol.includes("fair")) return 1;
   if (symbol.includes("clearsky")) return 0;
   return precipitation > 0 ? 61 : 3;
+}
+
+function formatInTimeZone(value: string, timezone: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value.replace(/:00Z$/, "");
+  }
+
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(date);
+
+    const part = (type: string) =>
+      parts.find((item) => item.type === type)?.value;
+    const year = part("year");
+    const month = part("month");
+    const day = part("day");
+    const hour = part("hour");
+    const minute = part("minute");
+
+    if (!year || !month || !day || !hour || !minute) {
+      return value.replace(/:00Z$/, "");
+    }
+
+    return `${year}-${month}-${day}T${hour}:${minute}`;
+  } catch {
+    return value.replace(/:00Z$/, "");
+  }
 }
 
 function normalizeLocationText(value: string) {
