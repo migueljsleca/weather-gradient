@@ -33,7 +33,7 @@ export default function RootLayout({
         <Script
           defer
           src="https://static.cloudflareinsights.com/beacon.min.js"
-          data-cf-beacon='{"token":"ddab161b3aea4307a7d4d4f9c2792347"}'
+          data-cf-beacon='{"token":"911cdb22074b44a6b6e6110fe33ef77f"}'
           strategy="afterInteractive"
         />
       </body>
